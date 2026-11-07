@@ -16,6 +16,7 @@
       --black: #222;
       --accent: #d9480f;
       --hint: #2b8a3e;
+      --capture: #c92a2a;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,24 +26,50 @@
       color: var(--text);
       font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
     }
-    .wrap { max-width: 960px; margin: 0 auto; }
+    body.noscroll { overflow: hidden; }
+    h1 { font-size: 1.5rem; margin: 0 0 16px; }
+    .wrap { max-width: 1000px; margin: 0 auto; }
     .game {
       display: flex;
       flex-wrap: wrap;
       gap: 20px;
       align-items: flex-start;
     }
+
+    /* ----- 게임판 영역 (전체 화면 대상) ----- */
+    #stage { flex: 1 1 420px; max-width: 580px; }
     .board-box {
-      flex: 1 1 420px;
-      max-width: 560px;
       background: var(--board);
       border-radius: 14px;
-      padding: 12px;
+      padding: 8px;
       box-shadow: 0 4px 16px rgba(0,0,0,.15);
     }
-    svg { width: 100%; height: auto; display: block; touch-action: manipulation; }
+    svg { width: 100%; height: auto; display: block; touch-action: manipulation; user-select: none; }
+    .fsbar { display: none; }
+
+    #stage.fs {
+      position: fixed; inset: 0; z-index: 50;
+      max-width: none; margin: 0;
+      background: var(--bg);
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 8px;
+    }
+    #stage.fs .fsbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      background: var(--panel); border-radius: 10px; padding: 8px 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    #stage.fs .fsbar .fs-status { flex: 1 1 200px; font-weight: 700; }
+    #stage.fs .fsbar .fs-status small { font-weight: 400; color: var(--muted); margin-left: 6px; }
+    #stage.fs .board-box {
+      flex: 1; min-height: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #stage.fs svg { width: 100%; height: 100%; }
+
+    /* ----- 오른쪽 패널 ----- */
     .side {
-      flex: 1 1 260px;
+      flex: 1 1 280px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -70,12 +97,30 @@
     }
     button:hover:not(:disabled) { background: #f1e7d8; }
     button:disabled { opacity: .45; cursor: default; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover:not(:disabled) { background: #b8400d; }
+
+    .settings h3 { margin: 0 0 10px; font-size: 1rem; }
+    .settings .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .settings .row > span { width: 64px; color: var(--muted); font-size: .9rem; }
+    .seg { display: inline-flex; border: 1px solid #b9a78f; border-radius: 8px; overflow: hidden; }
+    .seg label { padding: 6px 12px; cursor: pointer; font-size: .92rem; background: #fff; border-left: 1px solid #e0d4c2; }
+    .seg label:first-child { border-left: none; }
+    .seg input { position: absolute; opacity: 0; pointer-events: none; }
+    .seg input:checked + label { background: var(--text); color: #fff; }
+    .seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .settings .ai-only.disabled { opacity: .4; pointer-events: none; }
+    .settings .note { font-size: .85rem; color: var(--muted); margin: 0 0 10px; }
+
     .rules { font-size: .9rem; line-height: 1.55; }
     .rules ul { padding-left: 18px; margin: 6px 0 0; }
+
     .point { cursor: pointer; }
-    .piece { transition: cx .15s, cy .15s; }
+    .tray-stone { transition: opacity .35s, transform .35s; transform-box: fill-box; transform-origin: center; }
+    .tray-stone.gone { opacity: 0; transform: scale(.3); }
+
     .overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60;
       display: none; align-items: center; justify-content: center; padding: 16px;
     }
     .overlay.show { display: flex; }
@@ -88,8 +133,23 @@
   <h1>나인 모리스 (Nine Men's Morris)</h1>
 
   <div class="game">
-    <div class="board-box">
-      <svg id="board" viewBox="-0.6 -0.6 7.2 7.2" aria-label="나인 모리스 게임판"></svg>
+    <div id="stage">
+      <div class="fsbar">
+        <div class="fs-status" id="fsStatus"></div>
+        <button id="fsUndoBtn">무르기</button>
+        <button id="fsExitBtn">전체 화면 종료</button>
+      </div>
+      <div class="board-box">
+        <svg id="board" viewBox="-0.6 -1.75 7.2 9.5" aria-label="나인 모리스 게임판"></svg>
+      </div>
+
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <h2 id="overlayTitle"></h2>
+          <p id="overlayText"></p>
+          <div class="buttons" id="overlayButtons" style="justify-content:center"></div>
+        </div>
+      </div>
     </div>
 
     <div class="side">
@@ -98,28 +158,56 @@
       <div class="card">
         <div class="player" id="p0">
           <span class="stone" style="background:var(--white)"></span>
-          <span class="name">흰색</span>
+          <span class="name" id="p0name">흰색</span>
           <span class="info" id="p0info"></span>
         </div>
         <div class="player" id="p1">
           <span class="stone" style="background:var(--black)"></span>
-          <span class="name">검은색</span>
+          <span class="name" id="p1name">검은색</span>
           <span class="info" id="p1info"></span>
         </div>
       </div>
 
       <div class="card buttons">
+        <button id="fsBtn">⛶ 전체 화면</button>
         <button id="undoBtn">한 수 무르기</button>
         <button id="drawBtn">무승부 제안</button>
-        <button id="newBtn">새 게임</button>
+      </div>
+
+      <div class="card settings">
+        <h3>게임 설정</h3>
+        <div class="row">
+          <span>모드</span>
+          <div class="seg">
+            <input type="radio" name="mode" id="modePvp" value="pvp" checked><label for="modePvp">2인 대전</label>
+            <input type="radio" name="mode" id="modeAi" value="ai"><label for="modeAi">컴퓨터 대전</label>
+          </div>
+        </div>
+        <div class="row ai-only">
+          <span>난이도</span>
+          <div class="seg">
+            <input type="radio" name="level" id="lvEasy" value="easy"><label for="lvEasy">쉬움</label>
+            <input type="radio" name="level" id="lvNormal" value="normal" checked><label for="lvNormal">보통</label>
+            <input type="radio" name="level" id="lvHard" value="hard"><label for="lvHard">어려움</label>
+          </div>
+        </div>
+        <div class="row ai-only">
+          <span>순서</span>
+          <div class="seg">
+            <input type="radio" name="order" id="ordFirst" value="first" checked><label for="ordFirst">선공 (흰색)</label>
+            <input type="radio" name="order" id="ordSecond" value="second"><label for="ordSecond">후공 (검은색)</label>
+          </div>
+        </div>
+        <p class="note">설정은 [새 게임 시작]을 누르면 적용됩니다.</p>
+        <button class="primary" id="newBtn">새 게임 시작</button>
       </div>
 
       <div class="card rules">
         <strong>규칙</strong>
         <ul>
-          <li><b>놓기:</b> 흰색부터 번갈아 9개씩 빈 점에 말을 놓습니다.</li>
+          <li><b>놓기:</b> 흰색부터 번갈아 9개씩 빈 점에 말을 놓습니다. 게임판 위·아래에 남은 말이 표시됩니다.</li>
           <li><b>이동:</b> 모두 놓은 뒤에는 선을 따라 인접한 빈 점으로 한 칸 이동합니다.</li>
-          <li><b>밀:</b> 한 줄에 내 말 3개를 만들면 상대 말 1개를 제거합니다. 밀에 속한 말은 상대 말이 전부 밀에 속해 있을 때만 제거할 수 있습니다.</li>
+          <li><b>밀:</b> 한 줄에 내 말 3개를 만들면 상대 말 1개를 제거합니다. 밀에 속한 말은 상대 말이 전부 밀에 속해 있을 때만 제거할 수 있습니다. 마지막으로 잡힌 자리에는 빨간 ✕가 표시됩니다.</li>
           <li><b>플라잉:</b> 말이 3개만 남으면 아무 빈 점으로나 이동할 수 있습니다.</li>
           <li><b>승리:</b> 상대 말이 2개 이하가 되거나, 상대가 움직일 수 없으면 승리합니다.</li>
           <li><b>무승부:</b> 이동 단계에서 50수 동안 밀이 만들어지지 않거나, 무승부 제안을 상대가 수락하면 무승부입니다.</li>
@@ -129,34 +217,24 @@
   </div>
 </div>
 
-<div class="overlay" id="overlay">
-  <div class="card">
-    <h2 id="overlayTitle"></h2>
-    <p id="overlayText"></p>
-    <div class="buttons" id="overlayButtons" style="justify-content:center"></div>
-  </div>
-</div>
-
 <script>
 (function () {
   'use strict';
 
-  var NAMES = ['흰색', '검은색'];
+  var COLORS = ['흰색', '검은색'];
+  var LEVEL_NAMES = { easy: '쉬움', normal: '보통', hard: '어려움' };
   var PIECES_PER_PLAYER = 9;
   var NO_MILL_DRAW_LIMIT = 50;
 
+  // ================= 판 구조 =================
   // 24개 점의 좌표 (7x7 격자). 인덱스 = 링 * 8 + k (k: 왼쪽 위 모서리부터 시계방향)
   var RING_PATTERN = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
   var POINTS = [];
   for (var r = 0; r < 3; r++) {
-    var size = 6 - 2 * r; // 6, 4, 2
-    var step = size / 2;
-    RING_PATTERN.forEach(function (p) {
-      POINTS.push([r + p[0] * step, r + p[1] * step]);
-    });
+    var step = (6 - 2 * r) / 2;
+    RING_PATTERN.forEach(function (p) { POINTS.push([r + p[0] * step, r + p[1] * step]); });
   }
 
-  // 인접 관계
   var ADJ = POINTS.map(function () { return []; });
   for (var ring = 0; ring < 3; ring++) {
     for (var k = 0; k < 8; k++) {
@@ -169,105 +247,350 @@
     }
   }
 
-  // 밀(3개 일렬) 목록
   var MILLS = [];
   for (ring = 0; ring < 3; ring++) {
-    for (k = 0; k < 8; k += 2) {
-      MILLS.push([ring * 8 + k, ring * 8 + k + 1, ring * 8 + (k + 2) % 8]);
-    }
+    for (k = 0; k < 8; k += 2) MILLS.push([ring * 8 + k, ring * 8 + k + 1, ring * 8 + (k + 2) % 8]);
   }
   for (k = 1; k < 8; k += 2) MILLS.push([k, 8 + k, 16 + k]);
 
-  // ---------- 게임 상태 ----------
-  var state, history;
+  var MILLS_OF = POINTS.map(function (_, i) {
+    return MILLS.filter(function (m) { return m.indexOf(i) !== -1; });
+  });
 
-  function newState() {
-    var b = [];
-    for (var i = 0; i < 24; i++) b.push(null);
-    return {
-      board: b,              // null | 0 | 1
-      turn: 0,               // 0: 흰색, 1: 검은색
-      inHand: [PIECES_PER_PLAYER, PIECES_PER_PLAYER],
-      onBoard: [0, 0],
-      removing: false,       // 밀을 만들어 상대 말을 제거해야 하는 상태
-      selected: null,        // 이동 단계에서 선택한 말
-      noMillMoves: 0,        // 이동 단계에서 밀 없이 진행된 수
-      lastMove: null,        // {from, to}
-      lastMill: null,        // 방금 만든 밀
-      result: null           // null | {winner: 0|1|null, reason}
-    };
-  }
-
-  function clone(s) { return JSON.parse(JSON.stringify(s)); }
-
-  function startGame() {
-    state = newState();
-    history = [];
-    hideOverlay();
-    render();
-  }
-
-  function pushHistory() {
-    var s = clone(state);
-    s.selected = null;
-    history.push(s);
-  }
-
-  // ---------- 규칙 ----------
-  function millsAt(board, idx, player) {
-    return MILLS.filter(function (m) {
-      return m.indexOf(idx) !== -1 && m.every(function (p) { return board[p] === player; });
-    });
+  // ================= 규칙 엔진 (UI·AI 공용) =================
+  // 판 값: null = 빈 칸, 0 = 흰색, 1 = 검은색
+  function formsMill(board, idx, player) {
+    var ms = MILLS_OF[idx];
+    for (var j = 0; j < ms.length; j++) {
+      var m = ms[j];
+      if (board[m[0]] === player && board[m[1]] === player && board[m[2]] === player) return m;
+    }
+    return null;
   }
 
   function inMill(board, idx) {
-    return board[idx] !== null && millsAt(board, idx, board[idx]).length > 0;
+    return board[idx] !== null && formsMill(board, idx, board[idx]) !== null;
   }
 
-  function isPlacing(s, player) { return s.inHand[player] > 0; }
-
-  function canFly(s, player) {
-    return !isPlacing(s, player) && s.onBoard[player] === 3;
-  }
+  function isPlacing(s, p) { return s.inHand[p] > 0; }
+  function canFly(s, p) { return !isPlacing(s, p) && s.onBoard[p] === 3; }
+  function totalPieces(s, p) { return s.inHand[p] + s.onBoard[p]; }
 
   function targetsFrom(s, from) {
-    var player = s.board[from];
-    var cand = canFly(s, player) ? POINTS.map(function (_, i) { return i; }) : ADJ[from];
-    return cand.filter(function (i) { return s.board[i] === null; });
-  }
-
-  function hasAnyMove(s, player) {
-    if (isPlacing(s, player)) return true;
-    for (var i = 0; i < 24; i++) {
-      if (s.board[i] === player && targetsFrom(s, i).length > 0) return true;
+    var p = s.board[from], out = [], cand = canFly(s, p) ? null : ADJ[from];
+    if (cand) {
+      for (var j = 0; j < cand.length; j++) if (s.board[cand[j]] === null) out.push(cand[j]);
+    } else {
+      for (var t = 0; t < 24; t++) if (s.board[t] === null) out.push(t);
     }
-    return false;
+    return out;
   }
 
-  function removableTargets(s) {
-    var opp = 1 - s.turn;
+  function removableTargets(board, opp) {
     var all = [], free = [];
-    for (var i = 0; i < 24; i++) {
-      if (s.board[i] === opp) {
-        all.push(i);
-        if (!inMill(s.board, i)) free.push(i);
+    for (var j = 0; j < 24; j++) {
+      if (board[j] === opp) {
+        all.push(j);
+        if (!inMill(board, j)) free.push(j);
       }
     }
     return free.length > 0 ? free : all;
   }
 
-  function totalPieces(s, player) { return s.inHand[player] + s.onBoard[player]; }
+  function hasAnyMove(s, p) {
+    if (isPlacing(s, p)) return true;
+    for (var j = 0; j < 24; j++) if (s.board[j] === p && targetsFrom(s, j).length > 0) return true;
+    return false;
+  }
 
-  // 말을 놓거나 옮긴 뒤 처리
+  // 수 = {from (-1이면 놓기), to, rm (-1이면 제거 없음)}
+  function genMoves(s) {
+    var p = s.turn, opp = 1 - p, b = s.board, moves = [], bases = [], j, t;
+    if (isPlacing(s, p)) {
+      for (t = 0; t < 24; t++) if (b[t] === null) bases.push([-1, t]);
+    } else {
+      for (j = 0; j < 24; j++) {
+        if (b[j] !== p) continue;
+        var ts = targetsFrom(s, j);
+        for (t = 0; t < ts.length; t++) bases.push([j, ts[t]]);
+      }
+    }
+    for (j = 0; j < bases.length; j++) {
+      var from = bases[j][0], to = bases[j][1];
+      if (from >= 0) b[from] = null;
+      b[to] = p;
+      if (formsMill(b, to, p) && s.onBoard[opp] > 0) {
+        var rms = removableTargets(b, opp);
+        for (t = 0; t < rms.length; t++) moves.push({ from: from, to: to, rm: rms[t] });
+      } else {
+        moves.push({ from: from, to: to, rm: -1 });
+      }
+      b[to] = null;
+      if (from >= 0) b[from] = p;
+    }
+    return moves;
+  }
+
+  function applyMove(s, m) {
+    var p = s.turn, opp = 1 - p;
+    var n = {
+      board: s.board.slice(),
+      inHand: s.inHand.slice(),
+      onBoard: s.onBoard.slice(),
+      turn: opp,
+      noMillMoves: s.noMillMoves
+    };
+    if (m.from < 0) { n.inHand[p]--; n.onBoard[p]++; }
+    else n.board[m.from] = null;
+    n.board[m.to] = p;
+    if (m.rm >= 0) { n.board[m.rm] = null; n.onBoard[opp]--; n.noMillMoves = 0; }
+    else if (m.from >= 0) n.noMillMoves++;
+    return n;
+  }
+
+  // 차례인 쪽 기준 결과: null(진행 중) | {winner, reason}
+  function gameResult(s) {
+    var p = s.turn;
+    if (totalPieces(s, p) < 3) return { winner: 1 - p, reason: 'pieces' };
+    if (!hasAnyMove(s, p)) return { winner: 1 - p, reason: 'blocked' };
+    if (s.noMillMoves >= NO_MILL_DRAW_LIMIT) return { winner: null, reason: 'nomill' };
+    return null;
+  }
+
+  // ================= 컴퓨터 (AI) =================
+  var WIN_SCORE = 100000;
+
+  function countMoves(s, p) {
+    if (isPlacing(s, p) || canFly(s, p)) return 8;
+    var c = 0;
+    for (var j = 0; j < 24; j++) {
+      if (s.board[j] !== p) continue;
+      var a = ADJ[j];
+      for (var t = 0; t < a.length; t++) if (s.board[a[t]] === null) c++;
+    }
+    return c;
+  }
+
+  // 차례인 쪽 관점의 평가 점수
+  function evaluate(s) {
+    var p = s.turn, o = 1 - p, b = s.board;
+    var score = 120 * (totalPieces(s, p) - totalPieces(s, o));
+    for (var j = 0; j < MILLS.length; j++) {
+      var m = MILLS[j], mine = 0, theirs = 0, empty = 0;
+      for (var t = 0; t < 3; t++) {
+        var v = b[m[t]];
+        if (v === p) mine++; else if (v === o) theirs++; else empty++;
+      }
+      if (mine === 3) score += 14;
+      else if (theirs === 3) score -= 14;
+      else if (mine === 2 && empty === 1) score += 22;
+      else if (theirs === 2 && empty === 1) score -= 22;
+    }
+    var placing = isPlacing(s, 0) || isPlacing(s, 1);
+    score += (placing ? 1 : 5) * (countMoves(s, p) - countMoves(s, o));
+    return score;
+  }
+
+  function orderMoves(moves) {
+    // 상대 말을 잡는 수를 먼저 탐색
+    return moves.sort(function (a, b) { return (b.rm >= 0) - (a.rm >= 0); });
+  }
+
+  function Timeout() {}
+
+  function negamax(s, depth, alpha, beta, ply, ctx) {
+    if ((++ctx.nodes & 1023) === 0 && Date.now() > ctx.deadline) throw new Timeout();
+    var res = gameResult(s);
+    if (res) {
+      if (res.winner === null) return 0;
+      return res.winner === s.turn ? WIN_SCORE - ply : -(WIN_SCORE - ply);
+    }
+    if (depth === 0) return evaluate(s);
+    var moves = orderMoves(genMoves(s)), best = -Infinity;
+    for (var j = 0; j < moves.length; j++) {
+      var v = -negamax(applyMove(s, moves[j]), depth - 1, -beta, -alpha, ply + 1, ctx);
+      if (v > best) best = v;
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+
+  // 루트 탐색: 최선 수와 margin 이내 차이인 수들은 정확한 점수를 계산
+  function searchRoot(s, moves, depth, ctx, margin) {
+    var scored = [], alpha = -Infinity;
+    for (var j = 0; j < moves.length; j++) {
+      var v = -negamax(applyMove(s, moves[j]), depth - 1, -Infinity, -(alpha - margin - 1), 1, ctx);
+      scored.push({ m: moves[j], v: v });
+      if (v > alpha) alpha = v;
+    }
+    scored.sort(function (a, b) { return b.v - a.v; });
+    return scored;
+  }
+
+  function pickAmongBest(scored, margin) {
+    var top = scored[0].v;
+    var good = scored.filter(function (x) { return x.v >= top - margin; });
+    return good[Math.floor(Math.random() * good.length)].m;
+  }
+
+  function chooseAiMove(s, level) {
+    var moves = genMoves(s);
+    if (moves.length === 1) return moves[0];
+    var ctx = { nodes: 0, deadline: Infinity };
+
+    if (level === 'easy') {
+      // 절반 이상은 아무 수나 두고, 나머지는 바로 앞만 봄
+      if (Math.random() < 0.55) return moves[Math.floor(Math.random() * moves.length)];
+      return pickAmongBest(searchRoot(s, moves, 1, ctx, 30), 30);
+    }
+    if (level === 'normal') {
+      return pickAmongBest(searchRoot(s, moves, 2, ctx, 8), 8);
+    }
+    // 어려움: 시간 제한 안에서 반복 심화 탐색
+    ctx.deadline = Date.now() + 1200;
+    var best = pickAmongBest(searchRoot(s, moves, 2, ctx, 0), 0);
+    for (var depth = 3; depth <= 10; depth++) {
+      try {
+        var ordered = [best].concat(moves.filter(function (m) { return m !== best; }));
+        var scored = searchRoot(s, ordered, depth, ctx, 0);
+        best = pickAmongBest(scored, 0);
+        if (Math.abs(scored[0].v) > WIN_SCORE / 2) break;
+      } catch (e) {
+        if (e instanceof Timeout) break;
+        throw e;
+      }
+    }
+    return best;
+  }
+
+  // ================= 게임 상태 (UI) =================
+  var settings = { mode: 'pvp', level: 'normal', order: 'first' };
+  var game;         // 시작 시점에 확정된 설정
+  var state, history;
+  var aiTimers = [];
+
+  function newState() {
+    var b = [];
+    for (var j = 0; j < 24; j++) b.push(null);
+    return {
+      board: b,
+      turn: 0,
+      inHand: [PIECES_PER_PLAYER, PIECES_PER_PLAYER],
+      onBoard: [0, 0],
+      removing: false,
+      selected: null,
+      noMillMoves: 0,
+      lastMove: null,       // {from, to}
+      lastMill: null,       // 방금 만든 밀
+      lastCaptured: null,   // {idx, player} 마지막으로 잡힌 말
+      result: null
+    };
+  }
+
+  function isAi(p) { return game.mode === 'ai' && p === game.aiPlayer; }
+  function humanCanAct() { return !state.result && !isAi(state.turn); }
+
+  function nameOf(p) {
+    if (game.mode !== 'ai') return COLORS[p];
+    return isAi(p) ? '컴퓨터(' + COLORS[p] + ')' : '나(' + COLORS[p] + ')';
+  }
+
+  function josa(word, a, b) {
+    // 마지막 글자 받침 여부로 조사 선택 (괄호로 끝나면 괄호 안 단어 기준)
+    var w = word.replace(/\)$/, '');
+    var code = w.charCodeAt(w.length - 1) - 0xac00;
+    var has = code >= 0 && code <= 11171 && code % 28 !== 0;
+    return word + (has ? a : b);
+  }
+
+  function readSettings() {
+    settings.mode = document.querySelector('input[name=mode]:checked').value;
+    settings.level = document.querySelector('input[name=level]:checked').value;
+    settings.order = document.querySelector('input[name=order]:checked').value;
+    try { localStorage.setItem('morris-settings', JSON.stringify(settings)); } catch (e) {}
+    document.querySelectorAll('.ai-only').forEach(function (row) {
+      row.classList.toggle('disabled', settings.mode !== 'ai');
+    });
+  }
+
+  function loadSettings() {
+    try {
+      var saved = JSON.parse(localStorage.getItem('morris-settings') || 'null');
+      if (saved) {
+        ['mode', 'level', 'order'].forEach(function (key) {
+          var input = document.querySelector('input[name=' + key + '][value=' + saved[key] + ']');
+          if (input) input.checked = true;
+        });
+      }
+    } catch (e) {}
+    readSettings();
+  }
+
+  function clearAiTimers() {
+    aiTimers.forEach(clearTimeout);
+    aiTimers = [];
+  }
+
+  function startGame() {
+    clearAiTimers();
+    readSettings();
+    game = {
+      mode: settings.mode,
+      level: settings.level,
+      aiPlayer: settings.mode === 'ai' ? (settings.order === 'first' ? 1 : 0) : null
+    };
+    state = newState();
+    history = [];
+    hideOverlay();
+    buildTrays();
+    update();
+  }
+
+  function pushHistory() {
+    var s = JSON.parse(JSON.stringify(state));
+    s.selected = null;
+    history.push(s);
+  }
+
+  // ----- 행동 -----
+  function placeAt(idx) {
+    var p = state.turn;
+    pushHistory();
+    state.board[idx] = p;
+    state.inHand[p]--;
+    state.onBoard[p]++;
+    state.lastMove = { from: null, to: idx };
+    afterMove(idx, false);
+  }
+
+  function moveTo(from, idx) {
+    var p = state.turn;
+    pushHistory();
+    state.board[from] = null;
+    state.board[idx] = p;
+    state.selected = null;
+    state.lastMove = { from: from, to: idx };
+    afterMove(idx, true);
+  }
+
+  function removeAt(idx) {
+    var opp = 1 - state.turn;
+    state.board[idx] = null;
+    state.onBoard[opp]--;
+    state.lastCaptured = { idx: idx, player: opp };
+    state.lastMill = null;
+    endTurn();
+  }
+
   function afterMove(idx, isMovement) {
-    var mills = millsAt(state.board, idx, state.turn);
-    if (mills.length > 0 && state.onBoard[1 - state.turn] > 0) {
-      state.lastMill = mills[0];
+    var mill = formsMill(state.board, idx, state.turn);
+    state.lastMill = mill;
+    if (mill && state.onBoard[1 - state.turn] > 0) {
       state.removing = true;
       state.noMillMoves = 0;
       return;
     }
-    state.lastMill = mills.length > 0 ? mills[0] : null;
     if (isMovement) state.noMillMoves++;
     endTurn();
   }
@@ -276,78 +599,98 @@
     state.removing = false;
     state.selected = null;
     state.turn = 1 - state.turn;
-    checkGameOver();
-  }
-
-  function checkGameOver() {
-    var p = state.turn;
-    if (totalPieces(state, p) < 3) {
-      state.result = { winner: 1 - p, reason: NAMES[p] + '의 말이 2개 이하가 되었습니다.' };
-    } else if (!hasAnyMove(state, p)) {
-      state.result = { winner: 1 - p, reason: NAMES[p] + '이(가) 더 이상 움직일 수 없습니다.' };
-    } else if (state.noMillMoves >= NO_MILL_DRAW_LIMIT) {
-      state.result = { winner: null, reason: NO_MILL_DRAW_LIMIT + '수 동안 밀이 만들어지지 않았습니다.' };
+    var res = gameResult(state);
+    if (res) {
+      var loser = state.turn, reason;
+      if (res.reason === 'pieces') reason = josa(nameOf(loser), '의', '의') + ' 말이 2개 이하가 되었습니다.';
+      else if (res.reason === 'blocked') reason = josa(nameOf(loser), '은', '는') + ' 더 이상 움직일 수 없습니다.';
+      else reason = NO_MILL_DRAW_LIMIT + '수 동안 밀이 만들어지지 않았습니다.';
+      state.result = { winner: res.winner, reason: reason };
     }
-    if (state.result) showResult();
   }
 
-  // ---------- 입력 처리 ----------
   function onPointClick(idx) {
-    if (state.result) return;
-    var p = state.turn;
-    var cell = state.board[idx];
+    if (!humanCanAct()) return;
+    var p = state.turn, cell = state.board[idx];
 
     if (state.removing) {
-      if (removableTargets(state).indexOf(idx) === -1) return;
-      state.board[idx] = null;
-      state.onBoard[1 - p]--;
-      state.lastMill = null;
-      endTurn();
-      render();
-      return;
-    }
-
-    if (isPlacing(state, p)) {
+      if (removableTargets(state.board, 1 - p).indexOf(idx) === -1) return;
+      removeAt(idx);
+    } else if (isPlacing(state, p)) {
       if (cell !== null) return;
-      pushHistory();
-      state.board[idx] = p;
-      state.inHand[p]--;
-      state.onBoard[p]++;
-      state.lastMove = { from: null, to: idx };
-      afterMove(idx, false);
-      render();
-      return;
-    }
-
-    // 이동 단계
-    if (cell === p) {
+      placeAt(idx);
+    } else if (cell === p) {
       state.selected = (state.selected === idx) ? null : idx;
-      render();
+    } else if (cell === null && state.selected !== null) {
+      if (targetsFrom(state, state.selected).indexOf(idx) === -1) return;
+      moveTo(state.selected, idx);
+    } else {
       return;
     }
-    if (cell === null && state.selected !== null) {
-      if (targetsFrom(state, state.selected).indexOf(idx) === -1) return;
-      pushHistory();
-      var from = state.selected;
-      state.board[from] = null;
-      state.board[idx] = p;
-      state.selected = null;
-      state.lastMove = { from: from, to: idx };
-      afterMove(idx, true);
-      render();
-    }
+    update();
+  }
+
+  function update() {
+    render();
+    if (state.result) showResult();
+    else maybeRunAi();
+  }
+
+  // ----- 컴퓨터 차례 진행 -----
+  function maybeRunAi() {
+    if (state.result || !isAi(state.turn) || aiTimers.length) return;
+    var later = function (fn, ms) {
+      aiTimers.push(setTimeout(function () { fn(); }, ms));
+    };
+    later(function () {
+      var m = chooseAiMove({
+        board: state.board.slice(), inHand: state.inHand.slice(), onBoard: state.onBoard.slice(),
+        turn: state.turn, noMillMoves: state.noMillMoves
+      }, game.level);
+
+      var finish = function () { clearAiTimers(); update(); };
+      var doRemove = function () {
+        if (m.rm >= 0 && state.removing) {
+          render();
+          later(function () { removeAt(m.rm); finish(); }, 550);
+        } else {
+          finish();
+        }
+      };
+
+      if (m.from < 0) {
+        placeAt(m.to);
+        doRemove();
+      } else {
+        state.selected = m.from;
+        render();
+        later(function () { moveTo(m.from, m.to); doRemove(); }, 380);
+      }
+    }, 450);
   }
 
   function undo() {
-    if (history.length === 0) return;
-    state = history.pop();
+    if (!canUndo()) return;
+    clearAiTimers();
+    var s = history.pop();
+    // 컴퓨터 대전이면 내 차례까지 되돌림
+    while (game.mode === 'ai' && isAi(s.turn) && history.length) s = history.pop();
+    state = s;
     hideOverlay();
-    render();
+    update();
   }
 
-  // ---------- 렌더링 ----------
+  function canUndo() {
+    if (game.mode !== 'ai') return history.length > 0;
+    return history.some(function (s) { return !isAi(s.turn); });
+  }
+
+  // ================= 렌더링 =================
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var svg = document.getElementById('board');
+  var TRAY_Y = { top: -1.12, bottom: 7.12 };
+  var trayEls = { top: null, bottom: null };
+  var dynamicLayer;
 
   function el(name, attrs, parent) {
     var e = document.createElementNS(SVG_NS, name);
@@ -356,18 +699,58 @@
     return e;
   }
 
+  function bottomPlayer() { return game.mode === 'ai' ? 1 - game.aiPlayer : 0; }
+  function trayOf(p) { return p === bottomPlayer() ? 'bottom' : 'top'; }
+
+  function drawStone(parent, x, y, rr, owner, cls) {
+    var g = el('g', cls ? { 'class': cls } : {}, parent);
+    el('circle', {
+      cx: x, cy: y, r: rr,
+      fill: owner === 0 ? 'var(--white)' : 'var(--black)',
+      stroke: owner === 0 ? '#444' : '#000', 'stroke-width': rr * 0.14
+    }, g);
+    el('circle', { cx: x - rr * 0.28, cy: y - rr * 0.28, r: rr * 0.33, fill: owner === 0 ? '#fff' : '#555', opacity: 0.6 }, g);
+    return g;
+  }
+
   function drawBoardLines() {
     var g = el('g', { stroke: 'var(--line)', 'stroke-width': 0.06, fill: 'none', 'stroke-linecap': 'round' }, svg);
-    for (var r = 0; r < 3; r++) {
-      el('rect', { x: r, y: r, width: 6 - 2 * r, height: 6 - 2 * r }, g);
-    }
+    for (var rr = 0; rr < 3; rr++) el('rect', { x: rr, y: rr, width: 6 - 2 * rr, height: 6 - 2 * rr }, g);
     el('line', { x1: 3, y1: 0, x2: 3, y2: 2 }, g);
     el('line', { x1: 3, y1: 4, x2: 3, y2: 6 }, g);
     el('line', { x1: 0, y1: 3, x2: 2, y2: 3 }, g);
     el('line', { x1: 4, y1: 3, x2: 6, y2: 3 }, g);
   }
 
-  var dynamicLayer;
+  // 손에 든 말 9개: 게임판 위(상대)·아래(나)에 배치하고, 놓을 때마다 하나씩 사라짐
+  function buildTrays() {
+    ['top', 'bottom'].forEach(function (pos) {
+      if (trayEls[pos]) svg.removeChild(trayEls[pos].g);
+      var owner = pos === 'bottom' ? bottomPlayer() : 1 - bottomPlayer();
+      var y = TRAY_Y[pos];
+      var g = el('g', {}, svg);
+      var bg = el('rect', { x: -0.45, y: y - 0.42, width: 6.9, height: 0.84, rx: 0.42, fill: 'rgba(255,255,255,.28)', stroke: 'none' }, g);
+      var stones = [];
+      for (var j = 0; j < PIECES_PER_PLAYER; j++) {
+        var x = 3 + (j - 4) * 0.72;
+        el('circle', { cx: x, cy: y, r: 0.27, fill: 'none', stroke: 'var(--line)', 'stroke-width': 0.025, 'stroke-dasharray': '0.06 0.06', opacity: 0.45 }, g);
+        stones.push(drawStone(g, x, y, 0.27, owner, 'tray-stone'));
+      }
+      trayEls[pos] = { g: g, bg: bg, stones: stones, owner: owner };
+    });
+  }
+
+  function updateTrays() {
+    ['top', 'bottom'].forEach(function (pos) {
+      var t = trayEls[pos], left = state.inHand[t.owner];
+      // 가운데부터 남기고 바깥쪽부터 사라지도록: 오른쪽 끝부터 하나씩 제거
+      t.stones.forEach(function (s, j) { s.classList.toggle('gone', j >= left); });
+      var active = !state.result && state.turn === t.owner;
+      t.bg.setAttribute('stroke', active ? 'var(--accent)' : 'none');
+      t.bg.setAttribute('stroke-width', 0.05);
+      t.bg.setAttribute('fill', active ? 'rgba(255,241,230,.7)' : 'rgba(255,255,255,.28)');
+    });
+  }
 
   function render() {
     if (!dynamicLayer) {
@@ -376,14 +759,11 @@
     }
     while (dynamicLayer.firstChild) dynamicLayer.removeChild(dynamicLayer.firstChild);
 
-    var p = state.turn;
-    var targets = [];
-    var removable = [];
-    if (!state.result) {
-      if (state.removing) removable = removableTargets(state);
-      else if (isPlacing(state, p)) targets = POINTS.map(function (_, i) { return i; }).filter(function (i) { return state.board[i] === null; });
-      else if (state.selected !== null) targets = targetsFrom(state, state.selected);
-    }
+    var p = state.turn, showHints = humanCanAct();
+    var targets = [], removable = [];
+    if (state.removing) removable = removableTargets(state.board, 1 - p);
+    else if (showHints && isPlacing(state, p)) targets = POINTS.map(function (_, j) { return j; }).filter(function (j) { return state.board[j] === null; });
+    else if (state.selected !== null) targets = targetsFrom(state, state.selected);
 
     // 방금 만든 밀 강조
     if (state.lastMill) {
@@ -391,85 +771,108 @@
       el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: 'var(--accent)', 'stroke-width': 0.18, 'stroke-linecap': 'round', opacity: 0.6 }, dynamicLayer);
     }
 
-    // 직전 이동 표시
+    // 직전 이동의 출발점
     if (state.lastMove && state.lastMove.from !== null && state.board[state.lastMove.from] === null) {
       var f = POINTS[state.lastMove.from];
       el('circle', { cx: f[0], cy: f[1], r: 0.2, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 0.04, 'stroke-dasharray': '0.08 0.06' }, dynamicLayer);
     }
 
-    POINTS.forEach(function (pt, i) {
+    POINTS.forEach(function (pt, j) {
       var g = el('g', { 'class': 'point' }, dynamicLayer);
-      g.addEventListener('click', function () { onPointClick(i); });
-      // 클릭 영역
+      g.addEventListener('click', function () { onPointClick(j); });
       el('circle', { cx: pt[0], cy: pt[1], r: 0.45, fill: 'transparent' }, g);
-      var owner = state.board[i];
+      var owner = state.board[j];
+      var cap = state.lastCaptured && state.lastCaptured.idx === j ? state.lastCaptured : null;
+
       if (owner === null) {
         el('circle', { cx: pt[0], cy: pt[1], r: 0.12, fill: 'var(--line)' }, g);
-        if (targets.indexOf(i) !== -1 && (state.selected !== null || isPlacing(state, p))) {
+        if (cap) {
+          // 마지막으로 잡힌 자리: 흐린 말 + 빨간 ✕
+          var ghost = drawStone(g, pt[0], pt[1], 0.34, cap.player);
+          ghost.setAttribute('opacity', 0.28);
+          var d = 0.17;
+          el('path', { d: 'M' + (pt[0] - d) + ' ' + (pt[1] - d) + 'L' + (pt[0] + d) + ' ' + (pt[1] + d) + 'M' + (pt[0] + d) + ' ' + (pt[1] - d) + 'L' + (pt[0] - d) + ' ' + (pt[1] + d), stroke: 'var(--capture)', 'stroke-width': 0.08, 'stroke-linecap': 'round' }, g);
+        }
+        if (targets.indexOf(j) !== -1) {
           el('circle', { cx: pt[0], cy: pt[1], r: 0.2, fill: 'var(--hint)', opacity: state.selected !== null ? 0.55 : 0.18 }, g);
         }
       } else {
-        el('circle', {
-          'class': 'piece', cx: pt[0], cy: pt[1], r: 0.36,
-          fill: owner === 0 ? 'var(--white)' : 'var(--black)',
-          stroke: owner === 0 ? '#444' : '#000', 'stroke-width': 0.05
-        }, g);
-        el('circle', { cx: pt[0] - 0.1, cy: pt[1] - 0.1, r: 0.12, fill: owner === 0 ? '#fff' : '#555', opacity: 0.6 }, g);
-        if (state.lastMove && state.lastMove.to === i) {
+        drawStone(g, pt[0], pt[1], 0.36, owner);
+        if (cap) {
+          // 잡힌 자리에 다른 말이 들어온 경우 작은 ✕ 배지
+          var bx = pt[0] + 0.3, by = pt[1] - 0.3, e2 = 0.06;
+          el('circle', { cx: bx, cy: by, r: 0.12, fill: '#fff', stroke: 'var(--capture)', 'stroke-width': 0.03 }, g);
+          el('path', { d: 'M' + (bx - e2) + ' ' + (by - e2) + 'L' + (bx + e2) + ' ' + (by + e2) + 'M' + (bx + e2) + ' ' + (by - e2) + 'L' + (bx - e2) + ' ' + (by + e2), stroke: 'var(--capture)', 'stroke-width': 0.04, 'stroke-linecap': 'round' }, g);
+        }
+        if (state.lastMove && state.lastMove.to === j) {
           el('circle', { cx: pt[0], cy: pt[1], r: 0.07, fill: 'var(--accent)' }, g);
         }
-        if (state.selected === i) {
+        if (state.selected === j) {
           el('circle', { cx: pt[0], cy: pt[1], r: 0.44, fill: 'none', stroke: 'var(--hint)', 'stroke-width': 0.08 }, g);
         }
-        if (removable.indexOf(i) !== -1) {
+        if (removable.indexOf(j) !== -1) {
           el('circle', { cx: pt[0], cy: pt[1], r: 0.44, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 0.08, 'stroke-dasharray': '0.15 0.08' }, g);
         }
       }
     });
 
+    updateTrays();
     renderSide();
   }
 
-  function renderSide() {
-    var p = state.turn;
-    var statusEl = document.getElementById('status');
-    var main, sub;
+  function statusText() {
+    var p = state.turn, n = nameOf(p), main, sub;
     if (state.result) {
-      main = state.result.winner === null ? '무승부' : NAMES[state.result.winner] + ' 승리!';
+      main = state.result.winner === null ? '무승부' : nameOf(state.result.winner) + ' 승리!';
       sub = state.result.reason;
+    } else if (isAi(p)) {
+      main = josa(n, '이', '가') + ' 생각 중…';
+      sub = '난이도: ' + LEVEL_NAMES[game.level];
     } else if (state.removing) {
-      main = NAMES[p] + ': 밀 완성! 제거할 상대 말을 고르세요.';
+      main = n + ': 밀 완성! 제거할 상대 말을 고르세요.';
       sub = '점선으로 표시된 말만 제거할 수 있습니다.';
     } else if (isPlacing(state, p)) {
-      main = NAMES[p] + ' 차례 — 말을 놓으세요.';
+      main = n + ' 차례 — 말을 놓으세요.';
       sub = '빈 점을 클릭하세요. (남은 말 ' + state.inHand[p] + '개)';
     } else if (canFly(state, p)) {
-      main = NAMES[p] + ' 차례 — 플라잉!';
+      main = n + ' 차례 — 플라잉!';
       sub = state.selected === null ? '움직일 말을 고른 뒤 아무 빈 점으로 이동하세요.' : '이동할 빈 점을 클릭하세요.';
     } else {
-      main = NAMES[p] + ' 차례 — 말을 이동하세요.';
-      sub = state.selected === null ? '움직일 내 말을 클릭하세요.' : '초록색으로 표시된 인접 점을 클릭하세요.';
+      main = n + ' 차례 — 말을 이동하세요.';
+      sub = state.selected === null ? '움직일 내 말을 클릭하세요.' : '초록색으로 표시된 점을 클릭하세요.';
     }
     if (!state.result && !isPlacing(state, 0) && !isPlacing(state, 1)) {
       sub += ' (밀 없이 ' + state.noMillMoves + '/' + NO_MILL_DRAW_LIMIT + '수)';
     }
-    statusEl.innerHTML = '';
-    statusEl.appendChild(document.createTextNode(main));
+    return { main: main, sub: sub };
+  }
+
+  function setStatus(elm, t) {
+    elm.textContent = t.main;
     var small = document.createElement('small');
-    small.textContent = sub;
-    statusEl.appendChild(small);
+    small.textContent = t.sub;
+    elm.appendChild(small);
+  }
+
+  function renderSide() {
+    var t = statusText();
+    setStatus(document.getElementById('status'), t);
+    setStatus(document.getElementById('fsStatus'), t);
 
     [0, 1].forEach(function (pl) {
+      document.getElementById('p' + pl + 'name').textContent = nameOf(pl);
       document.getElementById('p' + pl).classList.toggle('active', !state.result && state.turn === pl);
       document.getElementById('p' + pl + 'info').textContent =
         '손에 ' + state.inHand[pl] + ' · 판에 ' + state.onBoard[pl] + (canFly(state, pl) ? ' · 플라잉' : '');
     });
 
-    document.getElementById('undoBtn').disabled = history.length === 0;
-    document.getElementById('drawBtn').disabled = !!state.result;
+    var undoOk = canUndo();
+    document.getElementById('undoBtn').disabled = !undoOk;
+    document.getElementById('fsUndoBtn').disabled = !undoOk;
+    document.getElementById('drawBtn').disabled = !humanCanAct();
   }
 
-  // ---------- 오버레이 ----------
+  // ================= 오버레이 =================
   var overlay = document.getElementById('overlay');
 
   function showOverlay(title, text, buttons) {
@@ -480,6 +883,7 @@
     buttons.forEach(function (b) {
       var btn = document.createElement('button');
       btn.textContent = b.label;
+      if (b.primary) btn.className = 'primary';
       btn.addEventListener('click', b.onClick);
       box.appendChild(btn);
     });
@@ -489,45 +893,110 @@
   function hideOverlay() { overlay.classList.remove('show'); }
 
   function showResult() {
-    var r = state.result;
-    showOverlay(
-      r.winner === null ? '무승부' : NAMES[r.winner] + ' 승리!',
-      r.reason,
-      [
-        { label: '판 보기', onClick: hideOverlay },
-        { label: '새 게임', onClick: startGame }
-      ]
-    );
+    var r = state.result, title;
+    if (r.winner === null) title = '무승부';
+    else if (game.mode === 'ai') title = isAi(r.winner) ? '컴퓨터 승리…' : '승리했습니다!';
+    else title = COLORS[r.winner] + ' 승리!';
+    var buttons = [
+      { label: '판 보기', onClick: hideOverlay },
+      { label: '새 게임', onClick: startGame, primary: true }
+    ];
+    if (game.mode === 'ai' && canUndo()) buttons.unshift({ label: '무르기', onClick: undo });
+    showOverlay(title, r.reason, buttons);
+  }
+
+  function declareDraw(reason) {
+    state.result = { winner: null, reason: reason };
+    state.selected = null;
+    render();
+    showResult();
   }
 
   function offerDraw() {
-    if (state.result) return;
+    if (!humanCanAct()) return;
     var p = state.turn;
+    if (game.mode === 'ai') {
+      // 컴퓨터 입장에서 형세가 나쁘거나 비슷한 채로 오래 끌면 수락
+      var s = { board: state.board, inHand: state.inHand, onBoard: state.onBoard, turn: game.aiPlayer, noMillMoves: state.noMillMoves };
+      var v = evaluate(s);
+      if (v < -150 || (state.noMillMoves >= 20 && Math.abs(v) < 60)) {
+        declareDraw('컴퓨터가 무승부 제안을 수락했습니다.');
+      } else {
+        showOverlay('제안 거절', '컴퓨터가 무승부 제안을 거절했습니다.', [{ label: '확인', onClick: hideOverlay }]);
+      }
+      return;
+    }
     showOverlay(
       '무승부 제안',
-      NAMES[p] + '이(가) 무승부를 제안했습니다. ' + NAMES[1 - p] + ', 수락하시겠습니까?',
+      josa(COLORS[p], '이', '가') + ' 무승부를 제안했습니다. ' + COLORS[1 - p] + ', 수락하시겠습니까?',
       [
-        { label: '수락', onClick: function () {
-            state.result = { winner: null, reason: '양측 합의로 무승부가 되었습니다.' };
-            state.selected = null;
-            render();
-            showResult();
-          } },
+        { label: '수락', onClick: function () { declareDraw('양측 합의로 무승부가 되었습니다.'); } },
         { label: '거절', onClick: hideOverlay }
       ]
     );
   }
 
+  // ================= 전체 화면 =================
+  var stage = document.getElementById('stage');
+
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement; }
+
+  function enterFullscreen() {
+    stage.classList.add('fs');
+    document.body.classList.add('noscroll');
+    var req = stage.requestFullscreen || stage.webkitRequestFullscreen;
+    if (req) {
+      try {
+        var pr = req.call(stage);
+        if (pr && pr.catch) pr.catch(function () {});
+      } catch (e) {}
+    }
+  }
+
+  function exitFullscreen() {
+    stage.classList.remove('fs');
+    document.body.classList.remove('noscroll');
+    if (fsElement()) {
+      var ex = document.exitFullscreen || document.webkitExitFullscreen;
+      if (ex) ex.call(document);
+    }
+  }
+
+  function onFsChange() {
+    // 브라우저 전체 화면이 Esc 등으로 끝나면 레이아웃도 원래대로
+    if (!fsElement()) {
+      stage.classList.remove('fs');
+      document.body.classList.remove('noscroll');
+    }
+  }
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && stage.classList.contains('fs') && !fsElement()) exitFullscreen();
+  });
+
+  // ================= 이벤트 연결 =================
+  document.getElementById('fsBtn').addEventListener('click', enterFullscreen);
+  document.getElementById('fsExitBtn').addEventListener('click', exitFullscreen);
   document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('fsUndoBtn').addEventListener('click', undo);
   document.getElementById('drawBtn').addEventListener('click', offerDraw);
+  document.querySelectorAll('.settings input').forEach(function (inp) {
+    inp.addEventListener('change', readSettings);
+  });
   document.getElementById('newBtn').addEventListener('click', function () {
-    if (history.length === 0 || state.result) { startGame(); return; }
+    var inProgress = history.length > 0 && !state.result;
+    if (!inProgress) { startGame(); return; }
     showOverlay('새 게임', '진행 중인 게임을 끝내고 새로 시작할까요?', [
-      { label: '새로 시작', onClick: startGame },
+      { label: '새로 시작', onClick: startGame, primary: true },
       { label: '취소', onClick: hideOverlay }
     ]);
   });
 
+  // 테스트용 훅
+  window.__morris = { genMoves: genMoves, applyMove: applyMove, gameResult: gameResult, chooseAiMove: chooseAiMove, getState: function () { return state; } };
+
+  loadSettings();
   startGame();
 })();
 </script>
