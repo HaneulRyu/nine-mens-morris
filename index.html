@@ -113,7 +113,14 @@
     .settings .note { font-size: .85rem; color: var(--muted); margin: 0 0 10px; }
 
     .rules { font-size: .9rem; line-height: 1.55; }
-    .rules ul { padding-left: 18px; margin: 6px 0 0; }
+    .rules ul { padding-left: 18px; margin: 10px 0 0; }
+    .rules-toggle {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      font-weight: 700; background: transparent; border: none; padding: 0;
+    }
+    .rules-toggle:hover:not(:disabled) { background: transparent; color: var(--accent); }
+    .rules-toggle .chev { transition: transform .2s; }
+    .rules-toggle[aria-expanded="true"] .chev { transform: rotate(180deg); }
 
     .point { cursor: pointer; }
     .tray-stone { transition: opacity .35s, transform .35s; transform-box: fill-box; transform-origin: center; }
@@ -137,6 +144,7 @@
       <div class="fsbar">
         <div class="fs-status" id="fsStatus"></div>
         <button id="fsUndoBtn">무르기</button>
+        <button class="sound-btn" aria-label="효과음 켜기/끄기"></button>
         <button id="fsExitBtn">전체 화면 종료</button>
       </div>
       <div class="board-box">
@@ -172,6 +180,7 @@
         <button id="fsBtn">⛶ 전체 화면</button>
         <button id="undoBtn">한 수 무르기</button>
         <button id="drawBtn">무승부 제안</button>
+        <button class="sound-btn" aria-label="효과음 켜기/끄기"></button>
       </div>
 
       <div class="card settings">
@@ -203,11 +212,13 @@
       </div>
 
       <div class="card rules">
-        <strong>규칙</strong>
-        <ul>
+        <button class="rules-toggle" id="rulesToggle" aria-expanded="false" aria-controls="rulesBody">
+          <span>📖 게임 규칙 보기</span><span class="chev">▾</span>
+        </button>
+        <ul id="rulesBody" hidden>
           <li><b>놓기:</b> 흰색부터 번갈아 9개씩 빈 점에 말을 놓습니다. 게임판 위·아래에 남은 말이 표시됩니다.</li>
           <li><b>이동:</b> 모두 놓은 뒤에는 선을 따라 인접한 빈 점으로 한 칸 이동합니다.</li>
-          <li><b>밀:</b> 한 줄에 내 말 3개를 만들면 상대 말 1개를 제거합니다. 밀에 속한 말은 상대 말이 전부 밀에 속해 있을 때만 제거할 수 있습니다. 마지막으로 잡힌 자리에는 빨간 ✕가 표시됩니다.</li>
+          <li><b>밀:</b> 한 줄에 내 말 3개를 만들면 상대 말 1개를 제거합니다. 밀에 속한 말은 상대 말이 전부 밀에 속해 있을 때만 제거할 수 있습니다. 말이 잡힌 자리는 다음 한 턴 동안 흐린 말과 빨간 ✕로 표시됩니다.</li>
           <li><b>플라잉:</b> 말이 3개만 남으면 아무 빈 점으로나 이동할 수 있습니다.</li>
           <li><b>승리:</b> 상대 말이 2개 이하가 되거나, 상대가 움직일 수 없으면 승리합니다.</li>
           <li><b>무승부:</b> 이동 단계에서 50수 동안 밀이 만들어지지 않거나, 무승부 제안을 상대가 수락하면 무승부입니다.</li>
@@ -557,20 +568,24 @@
   function placeAt(idx) {
     var p = state.turn;
     pushHistory();
+    state.lastCaptured = null; // 잡힌 자리 표시는 상대의 다음 한 턴 동안만 유지
     state.board[idx] = p;
     state.inHand[p]--;
     state.onBoard[p]++;
     state.lastMove = { from: null, to: idx };
+    Sound.place();
     afterMove(idx, false);
   }
 
   function moveTo(from, idx) {
     var p = state.turn;
     pushHistory();
+    state.lastCaptured = null; // 잡힌 자리 표시는 상대의 다음 한 턴 동안만 유지
     state.board[from] = null;
     state.board[idx] = p;
     state.selected = null;
     state.lastMove = { from: from, to: idx };
+    Sound.place();
     afterMove(idx, true);
   }
 
@@ -580,12 +595,14 @@
     state.onBoard[opp]--;
     state.lastCaptured = { idx: idx, player: opp };
     state.lastMill = null;
+    Sound.remove();
     endTurn();
   }
 
   function afterMove(idx, isMovement) {
     var mill = formsMill(state.board, idx, state.turn);
     state.lastMill = mill;
+    if (mill) Sound.mill();
     if (mill && state.onBoard[1 - state.turn] > 0) {
       state.removing = true;
       state.noMillMoves = 0;
@@ -690,6 +707,11 @@
   var svg = document.getElementById('board');
   var TRAY_Y = { top: -1.12, bottom: 7.12 };
   var trayEls = { top: null, bottom: null };
+  // 손에 든 말 받침 색: 흰색은 밝게, 검은색은 어두운 계열
+  var TRAY_FILL = [
+    { idle: 'rgba(255,255,255,.28)', active: 'rgba(255,241,230,.7)' },
+    { idle: 'rgba(30,22,16,.38)', active: 'rgba(30,22,16,.62)' }
+  ];
   var dynamicLayer;
 
   function el(name, attrs, parent) {
@@ -729,11 +751,11 @@
       var owner = pos === 'bottom' ? bottomPlayer() : 1 - bottomPlayer();
       var y = TRAY_Y[pos];
       var g = el('g', {}, svg);
-      var bg = el('rect', { x: -0.45, y: y - 0.42, width: 6.9, height: 0.84, rx: 0.42, fill: 'rgba(255,255,255,.28)', stroke: 'none' }, g);
+      var bg = el('rect', { x: -0.45, y: y - 0.42, width: 6.9, height: 0.84, rx: 0.42, fill: TRAY_FILL[owner].idle, stroke: 'none' }, g);
       var stones = [];
       for (var j = 0; j < PIECES_PER_PLAYER; j++) {
         var x = 3 + (j - 4) * 0.72;
-        el('circle', { cx: x, cy: y, r: 0.27, fill: 'none', stroke: 'var(--line)', 'stroke-width': 0.025, 'stroke-dasharray': '0.06 0.06', opacity: 0.45 }, g);
+        el('circle', { cx: x, cy: y, r: 0.27, fill: 'none', stroke: owner === 1 ? '#e8dcc8' : 'var(--line)', 'stroke-width': 0.025, 'stroke-dasharray': '0.06 0.06', opacity: owner === 1 ? 0.55 : 0.45 }, g);
         stones.push(drawStone(g, x, y, 0.27, owner, 'tray-stone'));
       }
       trayEls[pos] = { g: g, bg: bg, stones: stones, owner: owner };
@@ -748,7 +770,7 @@
       var active = !state.result && state.turn === t.owner;
       t.bg.setAttribute('stroke', active ? 'var(--accent)' : 'none');
       t.bg.setAttribute('stroke-width', 0.05);
-      t.bg.setAttribute('fill', active ? 'rgba(255,241,230,.7)' : 'rgba(255,255,255,.28)');
+      t.bg.setAttribute('fill', active ? TRAY_FILL[t.owner].active : TRAY_FILL[t.owner].idle);
     });
   }
 
@@ -798,12 +820,6 @@
         }
       } else {
         drawStone(g, pt[0], pt[1], 0.36, owner);
-        if (cap) {
-          // 잡힌 자리에 다른 말이 들어온 경우 작은 ✕ 배지
-          var bx = pt[0] + 0.3, by = pt[1] - 0.3, e2 = 0.06;
-          el('circle', { cx: bx, cy: by, r: 0.12, fill: '#fff', stroke: 'var(--capture)', 'stroke-width': 0.03 }, g);
-          el('path', { d: 'M' + (bx - e2) + ' ' + (by - e2) + 'L' + (bx + e2) + ' ' + (by + e2) + 'M' + (bx + e2) + ' ' + (by - e2) + 'L' + (bx - e2) + ' ' + (by + e2), stroke: 'var(--capture)', 'stroke-width': 0.04, 'stroke-linecap': 'round' }, g);
-        }
         if (state.lastMove && state.lastMove.to === j) {
           el('circle', { cx: pt[0], cy: pt[1], r: 0.07, fill: 'var(--accent)' }, g);
         }
@@ -975,7 +991,95 @@
     if (e.key === 'Escape' && stage.classList.contains('fs') && !fsElement()) exitFullscreen();
   });
 
+  // ================= 효과음 (Web Audio로 합성, 파일 없음) =================
+  var Sound = (function () {
+    var ctx = null, enabled = true;
+    try { enabled = localStorage.getItem('morris-sound') !== 'off'; } catch (e) {}
+
+    function ac() {
+      if (!enabled) return null;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!ctx) ctx = new AC();
+      if (ctx.state === 'suspended') ctx.resume();
+      return ctx;
+    }
+
+    function tone(c, freq, start, dur, type, vol, endFreq) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, start);
+      if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, start + dur);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(vol, start + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(start); o.stop(start + dur + 0.02);
+    }
+
+    function noise(c, start, dur, freq, q, vol) {
+      var len = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+      for (var j = 0; j < len; j++) d[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / len, 3);
+      var src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      src.buffer = buf;
+      f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+      g.gain.value = vol;
+      src.connect(f); f.connect(g); g.connect(c.destination);
+      src.start(start);
+    }
+
+    return {
+      // 말을 놓을 때: 판에 돌이 닿는 "딱" 소리
+      place: function () {
+        var c = ac(); if (!c) return;
+        var t = c.currentTime;
+        noise(c, t, 0.06, 2400, 1.2, 0.9);
+        tone(c, 520, t, 0.07, 'triangle', 0.25, 260);
+      },
+      // 밀 완성: 올라가는 세 음 차임
+      mill: function () {
+        var c = ac(); if (!c) return;
+        var t = c.currentTime + 0.09;
+        [659.25, 830.61, 987.77].forEach(function (f, j) {
+          tone(c, f, t + j * 0.09, 0.32, 'sine', 0.22);
+          tone(c, f * 2, t + j * 0.09, 0.18, 'sine', 0.05);
+        });
+      },
+      // 상대 말 제거: 아래로 떨어지는 "뿅" + 쓸어내는 소리
+      remove: function () {
+        var c = ac(); if (!c) return;
+        var t = c.currentTime;
+        tone(c, 700, t, 0.22, 'square', 0.07, 110);
+        noise(c, t, 0.18, 900, 0.8, 0.5);
+      },
+      isOn: function () { return enabled; },
+      toggle: function () {
+        enabled = !enabled;
+        try { localStorage.setItem('morris-sound', enabled ? 'on' : 'off'); } catch (e) {}
+        if (enabled) this.place();
+      }
+    };
+  })();
+
+  function renderSoundButtons() {
+    document.querySelectorAll('.sound-btn').forEach(function (b) {
+      b.textContent = Sound.isOn() ? '🔊 효과음' : '🔇 효과음';
+      b.setAttribute('aria-pressed', Sound.isOn() ? 'true' : 'false');
+    });
+  }
+
   // ================= 이벤트 연결 =================
+  document.querySelectorAll('.sound-btn').forEach(function (b) {
+    b.addEventListener('click', function () { Sound.toggle(); renderSoundButtons(); });
+  });
+  renderSoundButtons();
+  document.getElementById('rulesToggle').addEventListener('click', function () {
+    var body = document.getElementById('rulesBody');
+    var open = body.hidden;
+    body.hidden = !open;
+    this.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.firstElementChild.textContent = open ? '📖 게임 규칙 접기' : '📖 게임 규칙 보기';
+  });
   document.getElementById('fsBtn').addEventListener('click', enterFullscreen);
   document.getElementById('fsExitBtn').addEventListener('click', exitFullscreen);
   document.getElementById('undoBtn').addEventListener('click', undo);
